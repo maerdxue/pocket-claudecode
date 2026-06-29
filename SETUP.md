@@ -124,11 +124,7 @@ bin/doctor
 ## 8. 飞书验收 + 拿 open_id
 
 1. 在飞书找到机器人（单聊），发 `/list`。应回你运行中的 CC 会话列表（没有会话就回 `(无会话)`，也算通了——说明消息通路 OK）。
-2. 看 relay 日志拿 open_id：
-   ```bash
-   tmux capture-pane -t relay -p | grep 'recv' | tail -1
-   # 找 from=ou_xxx，复制 ou_...
-   ```
+2. 飞书单聊机器人发 `hi` 或 `/whoami` → 机器人直接回复 `你的 open_id: ou_xxx`，复制 `ou_...`。（没回再看日志：`tmux capture-pane -t relay -p | grep 'recv' | tail -1`，找 `from=ou_xxx`）
 3. 填回 `.env` 的 `FEISHU_MY_OPEN_ID`，重启 relay 让白名单生效：
    ```bash
    tmux send-keys -t relay C-c   # 杀 relay，看门狗自动拉起

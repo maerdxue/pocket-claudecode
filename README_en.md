@@ -70,6 +70,7 @@ POLL_SEC=5                   # sessions scan interval (sec)
 - `/list` — list all running CC sessions (grouped by project: index · name · time · size · status · bound group)
 - `/open <index|name>` — create group `project:name` + bind (use index if names collide)
 - `/claude` — CC built-in commands + your skills cheat sheet
+- `/whoami` — echo your open_id (for the whitelist, no log digging)
 - `/help`
 
 **Session group (after binding)**:

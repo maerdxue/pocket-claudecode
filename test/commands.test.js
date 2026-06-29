@@ -225,3 +225,23 @@ test('handleCardAction: 非白名单 openId 忽略', async () => {
   assert.equal(d.injected.length, 0);
   assert.equal(d.sent.length, 0);
 });
+
+test('/whoami：回显 open_id', async () => {
+  const d = deps();
+  await commands.handleMessage({ text: '/whoami', chatId: 'oc_p2p', chatType: 'p2p', openId: 'ou_me' }, d);
+  assert.match(d.sent[0][1], /ou_me/);
+  assert.match(d.sent[0][1], /open_id/);
+});
+
+test('MY_OPEN_ID 空 + 单聊文本：回 open_id 引导（不看日志拿）', async () => {
+  const d = deps({ myOpenId: '' });
+  await commands.handleMessage({ text: 'hi', chatId: 'oc_p2p', chatType: 'p2p', openId: 'ou_newuser' }, d);
+  assert.match(d.sent[0][1], /ou_newuser/);
+  assert.match(d.sent[0][1], /FEISHU_MY_OPEN_ID/);
+});
+
+test('MY_OPEN_ID 空 + /whoami：也回 open_id', async () => {
+  const d = deps({ myOpenId: '' });
+  await commands.handleMessage({ text: '/whoami', chatId: 'oc_p2p', chatType: 'p2p', openId: 'ou_newuser' }, d);
+  assert.match(d.sent[0][1], /ou_newuser/);
+});

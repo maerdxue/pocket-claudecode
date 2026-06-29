@@ -81,23 +81,23 @@
 
 **为什么要这个 id**：`FEISHU_MY_OPEN_ID` 是白名单——relay 收到消息时，只处理「发送者 open_id == 这个值」的消息，别人的消息直接丢弃（`commands.js` 里 `openId !== myOpenId` 就 return）。作用是**让机器人只回复你个人飞书账号发的消息**，防止企业里别人（或任何能联系到这个机器人的人）通过它操控你的电脑。留空 = 不校验，任何人都能控，**不建议长期留空**。换机器人后 open_id 会变（飞书 open_id 按应用分），新机器人要重拿。
 
-1. 先按 [SETUP.md](../SETUP.md) 把 relay 起起来（这步 `FEISHU_MY_OPEN_ID` 留空 = 临时不校验）。
-2. 飞书里找到机器人（单聊），发任意一条消息（比如 `hi`）。
-3. 从 relay 日志提取 open_id（稳定过滤命令，抓全部历史 + 去重）：
-   ```bash
-   tmux capture-pane -t relay -p -S - | grep -oE 'from=ou_[a-zA-Z0-9]+' | sort -u
-   ```
-   输出形如 `from=ou_09de...`，`ou_...` 那串就是你的 open_id。多个时取**最近**那条 recv 的（`| tail -1`）。
+**最简单（不用看日志）**：`FEISHU_MY_OPEN_ID` 留空起 relay → 飞书单聊给机器人发任意消息（`hi` 或 `/whoami`）→ **机器人直接回复你的 open_id**（`你的 open_id: ou_xxx`），复制 `ou_...`。
+
+1. 确认 `.env` 的 `FEISHU_MY_OPEN_ID` 留空（白名单不校验，临时）。
+2. 飞书单聊机器人发 `hi` 或 `/whoami`。
+3. 机器人回复 `你的 open_id: ou_xxx`，复制 `ou_...`。
 4. 填回 `.env`：
    ```
    FEISHU_MY_OPEN_ID=ou_你的openId
    ```
 5. 重启 relay 让白名单生效：`pkill -f 'relay\.js'`（看门狗自动拉起）。
 
-**其他查 open_id 的办法**（都不如发消息看日志直接）：
-- 飞书开放 API `contact.user.batch.get_id`：用手机号/邮箱换 open_id，需应用开通通讯录权限 + 先拿 app_access_token，比发条消息麻烦。
-- 飞书开发者后台「开发者工具」偶有按手机号查 open_id 的入口（以实际后台为准，不保证有）。
-- 发消息看日志仍是最快——一次 `hi` 就有。
+**备选（看日志）**：机器人没回（还没跑通）时，看 relay 日志：
+```bash
+tmux capture-pane -t relay -p -S - | grep -oE 'from=ou_[a-zA-Z0-9]+' | sort -u
+```
+
+**其他查法**（更绕）：飞书 API `contact.user.batch.get_id`（手机号换，需通讯录权限 + token）。
 
 ## 9. 验收
 
