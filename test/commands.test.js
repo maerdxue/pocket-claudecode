@@ -1,0 +1,227 @@
+// test/commands.test.js
+const test = require('node:test');
+const assert = require('node:assert');
+const commands = require('../lib/commands');
+
+function deps(over = {}) {
+  return {
+    myOpenId: 'ou_me',
+    reg: {},
+    sent: [], injected: [], captured: 'SCREEN', createdChatId: 'oc_NEW', logs: {},
+    injectFails: false, captureReturns: 'SCREEN',
+    pending: new Map(), patched: [],
+    async send(chatId, text) { this.sent.push([chatId, text]); },
+    async inject(sessionId, text) { if (this.injectFails) throw new Error('not-in-tmux'); this.injected.push([sessionId, text]); },
+    async patchCard(messageId, card) { this.patched.push([messageId, card]); },
+    async capture() { return this.captureReturns; },
+    async createGroup() { return this.createdChatId; },
+    async createDoc() { return 'doc_FAKE'; },
+    bindDoc(sessionId, docId) { if (this.reg[sessionId]) this.reg[sessionId].doc_id = docId; },
+    docUrl(docId) { return 'https://feishu.cn/docx/' + docId; },
+    bind(sessionId, chatId, name) { if (this.reg[sessionId]) { this.reg[sessionId].chat_id = chatId; this.reg[sessionId].group_name = name; } },
+    unbind(sessionId) { if (this.reg[sessionId]) { this.reg[sessionId].chat_id = null; this.reg[sessionId].group_name = null; } },
+    appendLog(sessionId, e) { (this.logs[sessionId] = this.logs[sessionId] || []).push(e); },
+    readLog(sessionId, n) { return (this.logs[sessionId] || []).slice(-n); },
+    listSessions() { return Object.entries(this.reg).map(([sid, v]) => ({ sessionId: sid, ...v })); },
+    ...over,
+  };
+}
+
+function sess(sid, name, cwd, status, extra = {}) {
+  return { sessionId: sid, name, cwd, status, ccStatus: 'idle', updatedAt: Date.now(), size: 100, chat_id: null, group_name: null, pid: 111, ...extra };
+}
+
+test('/list 按项目分组，显示 name+时间+大小+状态', async () => {
+  const d = deps();
+  d.reg = {
+    'sid-cc': sess('sid-cc', '会话测试', '/p/one-cli', 'active', { chat_id: 'oc_G', group_name: 'one-cli:会话测试' }),
+    'sid-auth': sess('sid-auth', 'auth', '/p/one-cli', 'inactive'),
+    'sid-other': sess('sid-other', 'x', '/p/proj2', 'active'),
+  };
+  await commands.handleMessage({ text: '/list', chatId: 'oc_p2p', chatType: 'p2p', openId: 'ou_me' }, d);
+  const out = d.sent[0][1];
+  assert.match(out, /📁 one-cli/);
+  assert.match(out, /📁 proj2/);
+  assert.match(out, /会话测试/);
+  assert.match(out, /🟢/);
+  assert.match(out, /⚫/);
+});
+
+test('/open <序号>：建群绑定', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active') };
+  await commands.handleMessage({ text: '/open 1', chatId: 'oc_p2p', chatType: 'p2p', openId: 'ou_me' }, d);
+  assert.equal(d.reg['sid-1'].chat_id, 'oc_NEW');
+  assert.match(d.sent[0][1], /已建群/);
+});
+
+test('/open <对话名>：建群绑定', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', '会话测试', '/p/one-cli', 'active') };
+  await commands.handleMessage({ text: '/open 会话测试', chatId: 'oc_p2p', chatType: 'p2p', openId: 'ou_me' }, d);
+  assert.equal(d.reg['sid-1'].chat_id, 'oc_NEW');
+});
+
+test('/open 重名：提示用序号', async () => {
+  const d = deps();
+  d.reg = {
+    'sid-1': sess('sid-1', 'dup', '/p/one-cli', 'active'),
+    'sid-2': sess('sid-2', 'dup', '/p/one-cli', 'active'),
+  };
+  await commands.handleMessage({ text: '/open dup', chatId: 'oc_p2p', chatType: 'p2p', openId: 'ou_me' }, d);
+  assert.match(d.sent[0][1], /重名/);
+  assert.equal(d.injected.length, 0);
+});
+
+test('/open 不存在：回无此对话名', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active') };
+  await commands.handleMessage({ text: '/open nope', chatId: 'oc_p2p', chatType: 'p2p', openId: 'ou_me' }, d);
+  assert.match(d.sent[0][1], /无此对话名/);
+});
+
+test('群里纯文本 active：注入', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
+  await commands.handleMessage({ text: '写个函数', chatId: 'oc_G', chatType: 'group', openId: 'ou_me' }, d);
+  assert.deepEqual(d.injected, [['sid-1', '写个函数']]);
+});
+
+test('群里纯文本 inactive：回未运行', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'inactive', { chat_id: 'oc_G' }) };
+  await commands.handleMessage({ text: '继续', chatId: 'oc_G', chatType: 'group', openId: 'ou_me' }, d);
+  assert.equal(d.injected.length, 0);
+  assert.match(d.sent[0][1], /未运行/);
+});
+
+test('群里纯文本 active 但非 tmux：回非tmux提示', async () => {
+  const d = deps({ injectFails: true });
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
+  await commands.handleMessage({ text: '继续', chatId: 'oc_G', chatType: 'group', openId: 'ou_me' }, d);
+  assert.equal(d.injected.length, 0);
+  assert.match(d.sent[0][1], /不在 tmux/);
+});
+
+test('/status active：截屏', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
+  await commands.handleMessage({ text: '/status', chatId: 'oc_G', chatType: 'group', openId: 'ou_me' }, d);
+  assert.equal(d.sent[0][1], 'SCREEN');
+});
+
+test('/status active 但非 tmux：回非tmux提示', async () => {
+  const d = deps({ captureReturns: null });
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
+  await commands.handleMessage({ text: '/status', chatId: 'oc_G', chatType: 'group', openId: 'ou_me' }, d);
+  assert.match(d.sent[0][1], /不在 tmux/);
+});
+
+test('/status inactive：回未运行', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'inactive', { chat_id: 'oc_G' }) };
+  await commands.handleMessage({ text: '/status', chatId: 'oc_G', chatType: 'group', openId: 'ou_me' }, d);
+  assert.match(d.sent[0][1], /未运行/);
+});
+
+test('/history：回日志', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
+  d.logs['sid-1'] = [{ ts: 't', dir: 'in', kind: 'prompt', text: 'hi' }];
+  await commands.handleMessage({ text: '/history', chatId: 'oc_G', chatType: 'group', openId: 'ou_me' }, d);
+  assert.match(d.sent[0][1], /hi/);
+});
+
+test('/close：解绑', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G', group_name: 'one-cli:cc' }) };
+  await commands.handleMessage({ text: '/close', chatId: 'oc_G', chatType: 'group', openId: 'ou_me' }, d);
+  assert.equal(d.reg['sid-1'].chat_id, null);
+});
+
+test('/claude：单聊发动态命令清单（扫 skills+commands+built-in）', async () => {
+  const d = deps();
+  await commands.handleMessage({ text: '/claude', chatId: 'oc_p2p', chatType: 'p2p', openId: 'ou_me' }, d);
+  const out = d.sent[0][1];
+  assert.match(out, /命令清单/);
+  assert.match(out, /\/clear/);
+  assert.match(out, /\/model/);
+  assert.match(out, /Built-in/);
+});
+
+test('单聊纯文本：回控制台提示', async () => {
+  const d = deps();
+  await commands.handleMessage({ text: '你好', chatId: 'oc_p2p', chatType: 'p2p', openId: 'ou_me' }, d);
+  assert.match(d.sent[0][1], /控制台/);
+});
+
+test('非白名单 openId：忽略', async () => {
+  const d = deps();
+  await commands.handleMessage({ text: '/list', chatId: 'oc_p2p', chatType: 'p2p', openId: 'ou_other' }, d);
+  assert.equal(d.sent.length, 0);
+});
+
+test('handleCardAction: 正常路由 inject + delete pending + patchCard + 记日志', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
+  d.pending.set('sid-1', { chatId: 'oc_G', messageId: 'om_1', ts: Date.now() });
+  await commands.handleCardAction({ chatId: 'oc_G', openId: 'ou_me', value: '1', messageId: 'om_1' }, d);
+  assert.deepEqual(d.injected, [['sid-1', '1']]);
+  assert.equal(d.pending.has('sid-1'), false);
+  assert.equal(d.patched.length, 1);
+  assert.equal(d.patched[0][0], 'om_1');
+  assert.equal(d.logs['sid-1'].slice(-1)[0].kind, 'card');
+});
+
+test('handleCardAction: value 对象 {choice} 取值', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
+  d.pending.set('sid-1', { chatId: 'oc_G', messageId: 'om_1', ts: Date.now() });
+  await commands.handleCardAction({ chatId: 'oc_G', openId: 'ou_me', value: { choice: '2' } }, d);
+  assert.deepEqual(d.injected, [['sid-1', '2']]);
+});
+
+test('handleCardAction: 过期不 inject 提示手打', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
+  d.pending.set('sid-1', { chatId: 'oc_G', messageId: 'om_1', ts: Date.now() - 301 * 1000 });
+  await commands.handleCardAction({ chatId: 'oc_G', openId: 'ou_me', value: '1' }, d);
+  assert.equal(d.injected.length, 0);
+  assert.match(d.sent[0][1], /过期/);
+  assert.equal(d.pending.has('sid-1'), false);
+});
+
+test('handleCardAction: 无 pending(点旧卡) 提示手打', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
+  await commands.handleCardAction({ chatId: 'oc_G', openId: 'ou_me', value: '1' }, d);
+  assert.equal(d.injected.length, 0);
+  assert.match(d.sent[0][1], /过期/);
+});
+
+test('handleCardAction: 未绑定群不 inject', async () => {
+  const d = deps();
+  d.reg = {};
+  await commands.handleCardAction({ chatId: 'oc_G', openId: 'ou_me', value: '1' }, d);
+  assert.equal(d.injected.length, 0);
+  assert.match(d.sent[0][1], /未绑定/);
+});
+
+test('handleCardAction: not-in-tmux 提示且 pending 已删(不回滚)', async () => {
+  const d = deps({ injectFails: true });
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
+  d.pending.set('sid-1', { chatId: 'oc_G', messageId: 'om_1', ts: Date.now() });
+  await commands.handleCardAction({ chatId: 'oc_G', openId: 'ou_me', value: '1' }, d);
+  assert.equal(d.injected.length, 0);
+  assert.match(d.sent[0][1], /不在 tmux/);
+  assert.equal(d.pending.has('sid-1'), false);
+});
+
+test('handleCardAction: 非白名单 openId 忽略', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
+  d.pending.set('sid-1', { chatId: 'oc_G', messageId: 'om_1', ts: Date.now() });
+  await commands.handleCardAction({ chatId: 'oc_G', openId: 'ou_other', value: '1' }, d);
+  assert.equal(d.injected.length, 0);
+  assert.equal(d.sent.length, 0);
+});

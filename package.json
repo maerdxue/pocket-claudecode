@@ -1,0 +1,17 @@
+{
+  "name": "pocket-claudecode",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Feishu bot <-> Claude Code (tmux) bridge, no public IP (long-connection)",
+  "main": "relay.js",
+  "scripts": {
+    "start": "node relay.js",
+    "doctor": "node bin/doctor",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.68.0",
+    "dotenv": "^17.4.2"
+  }
+}

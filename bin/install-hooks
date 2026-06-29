@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# 非破坏性合并 ~/.claude/settings.json：
+# 追加 Stop(hooks/stop_hook.js) + Notification(hooks/notify_hook.js)，已存在则跳过，先备份。
+# 可重复跑。
+
+set -euo pipefail
+
+SETTINGS="$HOME/.claude/settings.json"
+CLAUDE_DIR="$HOME/.claude"
+HOOK_DIR="$(cd "$(dirname "$0")/.." && pwd)/hooks"
+STOP_HOOK="$HOOK_DIR/stop_hook.js"
+NOTIFY_HOOK="$HOOK_DIR/notify_hook.js"
+
+mkdir -p "$CLAUDE_DIR"
+
+# 无 settings.json → 直接写入最小结构
+if [[ ! -f "$SETTINGS" ]]; then
+  cat > "$SETTINGS" <<EOF
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "node $STOP_HOOK" }]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [{ "type": "command", "command": "node $NOTIFY_HOOK" }]
+      }
+    ]
+  }
+}
+EOF
+  echo "✅ 已创建 $SETTINGS"
+  exit 0
+fi
+
+# 备份
+cp "$SETTINGS" "$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
+echo "💾 已备份 settings.json"
+
+# 用 node 合并（保留 JSON 格式与已有字段，非破坏性追加）
+node -e '
+const fs = require("fs");
+const p = process.argv[1];
+const stop = process.argv[2];
+const notify = process.argv[3];
+const j = JSON.parse(fs.readFileSync(p, "utf8"));
+j.hooks = j.hooks || {};
+function upsert(key, cmd) {
+  j.hooks[key] = j.hooks[key] || [];
+  for (const block of j.hooks[key]) {
+    block.hooks = block.hooks || [];
+    if (block.hooks.some(h => (h.command || "").includes(cmd))) return false;
+  }
+  if (!j.hooks[key].length) j.hooks[key].push({ hooks: [] });
+  j.hooks[key][0].hooks.push({ type: "command", command: "node " + cmd });
+  return true;
+}
+const a = upsert("Stop", stop);
+const b = upsert("Notification", notify);
+fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");
+console.log((a ? "✅ 追加 Stop" : "⏭ Stop 已存在，跳过") + " | " + (b ? "✅ 追加 Notification" : "⏭ Notification 已存在，跳过"));
+' "$SETTINGS" "$STOP_HOOK" "$NOTIFY_HOOK"

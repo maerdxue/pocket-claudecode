@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# cc-start [--resume] <name> [workdir] [cmd]
+# 起 tmux 会话跑 claude；relay 自动发现。
+# --resume: 跑 claude --resume <name>（恢复同名 CC 会话；若该会话名之前绑过群，恢复后原群自动接回）
+# 不带 --resume 时 cmd 默认 claude，可用第 3 参或 CC_CMD 覆盖
+# （如你用的是自定义命令而非 claude，跑 `CC_CMD=你的命令 bin/cc-start` 或 `bin/cc-start <name> <dir> 你的命令`）
+resume=0
+if [[ "$1" == "--resume" ]]; then resume=1; shift; fi
+name="${1:-$(basename "$PWD")}"
+workdir="${2:-$PWD}"
+if (( resume )); then
+  cmd="claude --resume $name"
+else
+  cmd="${3:-${CC_CMD:-claude}}"
+fi
+tmux has-session -t "$name" 2>/dev/null && { echo "会话 $name 已存在，换个名或先 tmux kill-session -t $name"; exit 1; }
+tmux new -d -s "$name" -c "$workdir"
+tmux send-keys -t "$name" "$cmd" Enter
+echo "已起会话 '$name' (cwd=$workdir, cmd=$cmd)${resume:+，恢复后原群自动接回}。"

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# 监督 relay：崩了/卡了自动拉起（每 10s 探 /health）
+# 用法：在 tmux 会话 relay 里跑 `bin/relay-watchdog`。可重复跑。
+# 环境变量：NODE（指定 node 路径，默认 PATH 里的 node）、RELAY_PORT（默认 7788）。
+set -euo pipefail
+
+PROJ="$(cd "$(dirname "$0")/.." && pwd)"
+NODE="${NODE:-$(command -v node || true)}"
+RELAY="$PROJ/relay.js"
+PORT="${RELAY_PORT:-7788}"
+
+if [[ -z "$NODE" ]]; then
+  echo "❌ 找不到 node，请先装 Node.js 20+，或用 NODE=/path/to/node 指定" >&2
+  exit 1
+fi
+
+while true; do
+  "$NODE" "$RELAY" &
+  PID=$!
+  echo "$(date '+%H:%M:%S') relay started pid=$PID"
+  while kill -0 $PID 2>/dev/null; do
+    sleep 10
+    if ! curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+      echo "$(date '+%H:%M:%S') health 失败，kill 重启"
+      kill $PID 2>/dev/null; break
+    fi
+  done
+  echo "$(date '+%H:%M:%S') relay 退出，2s 后重启"
+  sleep 2
+done

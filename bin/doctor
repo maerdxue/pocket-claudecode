@@ -1,0 +1,104 @@
+#!/usr/bin/env node
+// bin/doctor — 依赖与配置自检（只检查 + 提示，不自动装）。
+// 纯 Node 内置模块，不依赖 node_modules，可在 npm install 之前跑。
+// 用法：node bin/doctor  （或 ./bin/doctor）
+const { execFileSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const http = require('http');
+
+const PROJ = path.join(__dirname, '..');
+const isWin = process.platform === 'win32';
+
+const results = [];
+function row(name, ok, detail, fix) { results.push({ name, ok, detail: String(detail), fix: fix || '' }); }
+
+function which(cmd) {
+  try {
+    if (isWin) execFileSync('where', [cmd], { stdio: 'ignore' });
+    else execFileSync('which', [cmd], { stdio: 'ignore' });
+    return true;
+  } catch { return false; }
+}
+function runOut(cmd, args) {
+  try { return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); }
+  catch { return null; }
+}
+function parseEnv(text) {
+  const o = {};
+  for (const line of text.split('\n')) {
+    if (line.trim().startsWith('#')) continue;
+    const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)$/);
+    if (m) o[m[1]] = m[2].replace(/^["']|["']$/g, '').trim();
+  }
+  return o;
+}
+function readEnv() {
+  const p = path.join(PROJ, '.env');
+  return fs.existsSync(p) ? parseEnv(fs.readFileSync(p, 'utf8')) : {};
+}
+
+(async () => {
+  // 1. Node（doctor 本身跑在 node 上，查版本即可）
+  const nodeMajor = Number(process.versions.node.split('.')[0]);
+  row('Node.js', nodeMajor >= 20, `v${process.versions.node}`,
+    nodeMajor >= 20 ? '' : (isWin ? 'winget install OpenJS.NodeJS.LTS'
+      : 'mac: brew install node@20  /  Linux/WSL: 用 nvm 或 nodesource 装 Node 20+'));
+
+  // 2. tmux
+  const tmuxV = runOut('tmux', ['-V']);
+  row('tmux', !!tmuxV, tmuxV || '未安装',
+    tmuxV ? '' : (isWin ? 'Windows 原生无 tmux，请在 WSL2 里跑：wsl --install，进 WSL 后 sudo apt install tmux'
+      : 'mac: brew install tmux  /  Linux: sudo apt install tmux'));
+
+  // 3. claude 命令
+  const hasClaude = which('claude');
+  row('claude 命令', hasClaude, hasClaude ? '已安装' : '未找到',
+    hasClaude ? '' : 'npm install -g @anthropic-ai/claude-code（自定义命令可用 CC_CMD 覆盖，见 bin/cc-start）');
+
+  // 4. .env
+  const env = readEnv();
+  const hasId = !!env.FEISHU_APP_ID, hasSecret = !!env.FEISHU_APP_SECRET;
+  row('.env 配置', hasId && hasSecret,
+    !fs.existsSync(path.join(PROJ, '.env')) ? '缺 .env' :
+    (hasId && hasSecret ? 'APP_ID/SECRET 已填' : `缺 ${!hasId ? 'FEISHU_APP_ID ' : ''}${!hasSecret ? 'FEISHU_APP_SECRET' : ''}`.trim()),
+    'cp .env.example .env 后填值（飞书凭证见 docs/feishu-setup.md）');
+
+  // 5. 全局 hooks
+  const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+  let hooksDetail = '未装', hooksOk = false;
+  if (fs.existsSync(settingsPath)) {
+    const s = fs.readFileSync(settingsPath, 'utf8');
+    if (s.includes('stop_hook.js')) { hooksOk = true; hooksDetail = 'Stop hook 已装'; }
+    else hooksDetail = 'settings.json 无 stop_hook';
+  }
+  row('全局 hooks', hooksOk, hooksDetail, 'bin/install-hooks');
+
+  // 6. relay 在跑
+  const port = env.RELAY_PORT || '7788';
+  await new Promise(resolve => {
+    const req = http.get({ host: '127.0.0.1', port, path: '/health', timeout: 2000 }, res => {
+      let b = ''; res.on('data', c => b += c);
+      res.on('end', () => {
+        const ok = b.includes('"ok"');
+        row('relay 运行中', ok, ok ? `:${port}/health ok` : `:${port} 回了但非 ok`,
+          'tmux new -d -s relay && tmux send-keys -t relay "bin/relay-watchdog" Enter');
+        resolve();
+      });
+    });
+    req.on('timeout', () => { req.destroy(); row('relay 运行中', false, `:${port} 无响应`, 'tmux new -d -s relay && tmux send-keys -t relay "bin/relay-watchdog" Enter'); resolve(); });
+    req.on('error', () => { row('relay 运行中', false, `:${port} 连接失败`, 'tmux new -d -s relay && tmux send-keys -t relay "bin/relay-watchdog" Enter'); resolve(); });
+  });
+
+  // 输出
+  console.log('\npocket-claudecode 自检\n');
+  let allOk = true;
+  for (const r of results) {
+    if (!r.ok) allOk = false;
+    console.log(`${r.ok ? '✅' : '❌'} ${r.name.padEnd(14)} ${r.detail}`);
+    if (!r.ok && r.fix) console.log(`              → 修复: ${r.fix}`);
+  }
+  console.log(allOk ? '\n🎉 全部就绪。去飞书给机器人发 /list 验收。' : '\n⚠️ 有未就绪项，按提示修复后重跑 bin/doctor。');
+  process.exitCode = allOk ? 0 : 1;
+})();
