@@ -83,7 +83,7 @@ test('#17 buildHandledCard: input 不匹配选项走已注入不画方框', () =
 });
 
 test('#21 parseOptions: label 含 emoji 按码点截断不乱码', () => {
-  const opts = parseOptions('1. 🚀发射\n2. 🎉庆祝\n3. 🌟星');
+  const opts = parseOptions('Choose an option:\n1. 🚀发射\n2. 🎉庆祝\n3. 🌟星');
   assert.equal(opts.length, 3);
   assert.ok(opts[0].label.includes('🚀'));
 });
@@ -93,6 +93,11 @@ test('#22 buildContentCard: 空 screen 纯文本不代码块裹', () => {
   const div = card.elements.find(e => e.tag === 'div');
   assert.match(div.text.content, /无画面/);
   assert.doesNotMatch(div.text.content, /```/);
+});
+
+test('parseOptions: 无菜单上下文(模型回复编号列表)不误认', () => {
+  const screen = '1. 5选项卡是不是5个按钮全有\n2. 多菜单卡是不是当前题选项';
+  assert.equal(parseOptions(screen), null);  // 无 Choose/❯，编号列表不当选项
 });
 
 test('extractInput: 字符串原样', () => {
