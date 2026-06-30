@@ -18,11 +18,20 @@ while true; do
   "$NODE" "$RELAY" &
   PID=$!
   echo "$(date '+%H:%M:%S') relay started pid=$PID"
+  START=$(date +%s)
+  FAIL=0
   while kill -0 $PID 2>/dev/null; do
     sleep 10
+    if [ $(( $(date +%s) - START )) -lt 30 ]; then continue; fi  # 启动宽限 30s：只看进程崩没，不探 health（避免启动窗口误杀）
     if ! curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
-      echo "$(date '+%H:%M:%S') health 失败，kill 重启"
-      kill $PID 2>/dev/null; break
+      FAIL=$((FAIL + 1))
+      echo "$(date '+%H:%M:%S') health 失败 ($FAIL/3)"
+      if [ "$FAIL" -ge 3 ]; then
+        echo "$(date '+%H:%M:%S') 连续 3 次失败，kill 重启"
+        kill $PID 2>/dev/null; break
+      fi
+    else
+      FAIL=0
     fi
   done
   echo "$(date '+%H:%M:%S') relay 退出，2s 后重启"

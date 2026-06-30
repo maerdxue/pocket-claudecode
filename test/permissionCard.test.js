@@ -60,10 +60,39 @@ test('buildHandledCard: 有 options 保留选项+标记已选，无按钮', () =
   assert.match(div.text.content, /已选择.*2/);
 });
 
+test('buildHandledCard: choice number vs input string 统一比较标对 ✅', () => {
+  const opts = [{ label: 'A', value: { choice: 1 } }, { label: 'B', value: { choice: 2 } }];
+  const card = buildHandledCard({ options: opts, input: '1' });  // input string, choice number
+  const div = card.elements.find(e => e.tag === 'div');
+  assert.match(div.text.content, /✅ A/);
+  assert.match(div.text.content, /⬜ B/);
+});
+
 test('buildHandledCard: 无 options 降级显示已注入', () => {
   const card = buildHandledCard({ input: '2' });
   const div = card.elements.find(e => e.tag === 'div');
   assert.match(div.text.content, /已注入.*2/);
+});
+
+test('#17 buildHandledCard: input 不匹配选项走已注入不画方框', () => {
+  const opts = [{ label: 'A', value: { choice: '1' } }, { label: 'B', value: { choice: '2' } }];
+  const card = buildHandledCard({ options: opts, input: '手打文本' });
+  const div = card.elements.find(e => e.tag === 'div');
+  assert.match(div.text.content, /已注入.*手打文本/);
+  assert.doesNotMatch(div.text.content, /⬜/);
+});
+
+test('#21 parseOptions: label 含 emoji 按码点截断不乱码', () => {
+  const opts = parseOptions('1. 🚀发射\n2. 🎉庆祝\n3. 🌟星');
+  assert.equal(opts.length, 3);
+  assert.ok(opts[0].label.includes('🚀'));
+});
+
+test('#22 buildContentCard: 空 screen 纯文本不代码块裹', () => {
+  const card = buildContentCard({ screen: '', message: 'x' });
+  const div = card.elements.find(e => e.tag === 'div');
+  assert.match(div.text.content, /无画面/);
+  assert.doesNotMatch(div.text.content, /```/);
 });
 
 test('extractInput: 字符串原样', () => {
@@ -97,4 +126,29 @@ test('parseOptions: 不足 2 个返回 null', () => {
   assert.equal(parseOptions('随便聊\n方案一：A'), null);
   assert.equal(parseOptions(''), null);
   assert.equal(parseOptions(null), null);
+});
+
+test('parseOptions: CC 标准菜单 1. xxx 认全 5 个', () => {
+  const screen = 'Choose an option:\n1. Redis\n2. LRU\n3. SQLite\n4. Memcache\n5. 文件';
+  const opts = parseOptions(screen);
+  assert.equal(opts.length, 5);
+  assert.deepEqual(opts.map(o => o.value.choice), ['1', '2', '3', '4', '5']);
+  assert.match(opts[0].label, /Redis/);
+  assert.match(opts[4].label, /文件/);
+});
+
+test('parseOptions: 兼容 ❯/> 高亮 marker 前缀', () => {
+  const screen = '1. A\n❯ 2. B\n3. C';
+  const opts = parseOptions(screen);
+  assert.equal(opts.length, 3);
+  assert.equal(opts[1].value.choice, '2');
+  assert.match(opts[1].label, /^B/);  // marker 不进 label
+});
+
+test('parseOptions: 多题表单截屏认当前题选项（Q1/Q2/Q3 tab 行忽略）', () => {
+  const screen = 'Q1  Q2  Q3  ✓ Submit\n← →\nChoose an option:\n1. 方案甲\n2. 方案乙\n3. 方案丙';
+  const opts = parseOptions(screen);
+  assert.equal(opts.length, 3);
+  assert.deepEqual(opts.map(o => o.value.choice), ['1', '2', '3']);
+  assert.match(opts[0].label, /方案甲/);
 });

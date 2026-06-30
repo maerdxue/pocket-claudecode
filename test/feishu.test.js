@@ -19,6 +19,23 @@ test('createGroup: 调 im.chat.create 并返回 chat_id', async () => {
   assert.equal(chatId, 'oc_NEW');
 });
 
+test('#11 createGroup: code 非 0 抛错不假绑定', async () => {
+  const fakeClient = { im: { chat: { create: async () => ({ code: 99999, msg: 'fail' }) } } };
+  await assert.rejects(feishu.createGroup(fakeClient, 'x', 'ou_me'), /code=99999/);
+});
+
+test('#11 createGroup: 无 chat_id 抛错', async () => {
+  const fakeClient = { im: { chat: { create: async () => ({ code: 0, data: {} }) } } };
+  await assert.rejects(feishu.createGroup(fakeClient, 'x', 'ou_me'), /未返回 chat_id/);
+});
+
+test('#13 sendToChat: 失败重试 1 次后成功', async () => {
+  let calls = 0;
+  const fakeClient = { im: { message: { create: async () => { calls++; if (calls === 1) throw new Error('limit'); return {}; } } } };
+  await feishu.sendToChat(fakeClient, 'oc_1', 'hi');
+  assert.equal(calls, 2);  // 第一次失败重试第二次成功
+});
+
 test('parseReceiveEvent: 从 im.message.receive_v1 提取 chatId/openId/text/chatType', () => {
   const data = {
     sender: { sender_id: { open_id: 'ou_me' } },
@@ -28,7 +45,16 @@ test('parseReceiveEvent: 从 im.message.receive_v1 提取 chatId/openId/text/cha
   assert.equal(p.chatId, 'oc_1');
   assert.equal(p.openId, 'ou_me');
   assert.equal(p.chatType, 'group');
-  assert.equal(p.text, 'hi @_user_1');  // @ 由上层去
+  assert.equal(p.text, 'hi');  // parseReceiveEvent 去 @占位符
+});
+
+test('parseReceiveEvent: @ 占位符去掉，/命令干净', () => {
+  const data = {
+    sender: { sender_id: { open_id: 'ou_me' } },
+    message: { chat_id: 'oc_1', message_type: 'text', chat_type: 'group', content: '{"text":"@_user_1  /status"}' },
+  };
+  const p = feishu.parseReceiveEvent(data);
+  assert.equal(p.text, '/status');
 });
 
 test('sendCard: 调 im.message.create 发 interactive 卡片，返回 message_id', async () => {

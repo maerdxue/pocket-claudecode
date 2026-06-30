@@ -17,4 +17,4 @@ process.stdin.on('end', () => {
     req.end();
   } catch { die(0); }
 });
-setTimeout(() => die(0), 1500).unref();
+setTimeout(() => die(0), 5000).unref();

@@ -152,3 +152,14 @@ test('/push 卡片+纯文本都失败：解绑 chat_id', async () => {
   assert.equal(r.code, 200);
   assert.equal(unbound, 'cc');
 });
+
+test('#12 /push kind=permission: capture 抛错不 500 走降级', async () => {
+  const d = deps();
+  d.capture = async () => { throw new Error('tmux 挂'); };
+  const { port, close } = await startHttpServer({ port: 0, deps: d });
+  const r = await post(port, { session: 'cc', kind: 'permission', message: 'Claude needs your permission' });
+  await close();
+  assert.equal(r.code, 200);
+  assert.equal(d.sentCards.length, 0);
+  assert.match(d.sent[0][1], /待审批/);
+});

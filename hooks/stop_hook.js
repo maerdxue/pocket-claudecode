@@ -10,7 +10,8 @@ process.stdin.on('end', () => {
     const j = JSON.parse(d);
     const sessionId = j.session_id;
     if (!sessionId) die(0);
-    const text = j.last_assistant_message || '(无 last_assistant_message)';
+    const text = j.last_assistant_message || '';
+    if (!text) die(0);  // 空 last_assistant_message 不推占位垃圾
     const transcriptPath = j.transcript_path || '';
     const req = http.request({ host: '127.0.0.1', port: PORT, path: '/push', method: 'POST', headers: { 'Content-Type': 'application/json' } }, () => die(0));
     req.on('error', () => die(0));
@@ -18,4 +19,4 @@ process.stdin.on('end', () => {
     req.end();
   } catch { die(0); }
 });
-setTimeout(() => die(0), 1500).unref();
+setTimeout(() => die(0), 5000).unref();

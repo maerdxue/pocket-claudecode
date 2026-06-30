@@ -65,3 +65,24 @@ test('空输入 → 空 elements', () => {
   const c = markdownToCard('');
   assert.equal(c.elements.length, 0);
 });
+
+test('#4 未闭合代码块降级普通文本（不吞后续当代码）', () => {
+  const c = markdownToCard('```bash\nls\n后续文本');
+  const md = c.elements.filter(e => e.tag === 'markdown').map(e => e.content).join('\n');
+  assert.match(md, /后续文本/);  // 后续文本正常出现，不被吞当代码
+  assert.doesNotMatch(md, /```bash\nls\n```/);  // 未闭合不补 ``` 闭合代码块
+});
+
+test('#3 超长 content 截断到上限内', () => {
+  const c = markdownToCard('x'.repeat(50000));
+  const md = c.elements.filter(e => e.tag === 'markdown').map(e => e.content).join('\n');
+  assert.ok(md.length < 50000);
+  assert.match(md, /已截断/);
+});
+
+test('#20 \\| 转义还原（单元格含 |）', () => {
+  const c = markdownToCard('| a | b |\n|---|---|\n| 1\\|2 | 3 |');
+  const t = c.elements.find(e => e.tag === 'table');
+  assert.ok(t);
+  assert.equal(t.rows[0]['c0'], '1|2');  // \| 还原为 |
+});

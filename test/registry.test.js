@@ -39,6 +39,19 @@ test('merge: 未绑定的不在 scanned→prune', () => {
   assert.equal(after['sid-x'], undefined);
 });
 
+test('#15 merge: inactive 超 7 天 TTL 清除', () => {
+  const old = new Date(Date.now() - 8 * 86400 * 1000).toISOString();
+  const after = reg.merge({ 'sid-old': { sessionId:'sid-old', chat_id:'oc_O', last_seen: old, status:'inactive', name:'o', cwd:'/p/o' } }, []);
+  assert.equal(after['sid-old'], undefined);
+});
+
+test('#15 merge: inactive 7 天内保留', () => {
+  const recent = new Date(Date.now() - 3 * 86400 * 1000).toISOString();
+  const after = reg.merge({ 'sid-r': { sessionId:'sid-r', chat_id:'oc_R', last_seen: recent, status:'inactive', name:'r', cwd:'/p/r' } }, []);
+  assert.ok(after['sid-r']);
+  assert.equal(after['sid-r'].status, 'inactive');
+});
+
 test('merge: inactive+绑定 被 resume→active，原群接回', () => {
   const before = { 'sid-a': { sessionId:'sid-a', chat_id:'oc_A', group_name:'p:a', status:'inactive', name:'a', cwd:'/p/a', pid:null } };
   const scanned = [{ sessionId:'sid-a', pid:333, name:'a', cwd:'/p/a', status:'idle', updatedAt:3, size:30 }];

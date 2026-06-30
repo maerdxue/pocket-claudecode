@@ -161,6 +161,21 @@ test('非白名单 openId：忽略', async () => {
   assert.equal(d.sent.length, 0);
 });
 
+test('handleMessage: openId 缺失拒绝（防 undefined 短路放行）', async () => {
+  const d = deps();
+  await commands.handleMessage({ text: '/list', chatId: 'oc_p2p', chatType: 'p2p', openId: undefined }, d);
+  assert.equal(d.sent.length, 0);
+});
+
+test('handleCardAction: openId 缺失拒绝（防伪造回调放行）', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
+  d.pending.set('sid-1', { chatId: 'oc_G', messageId: 'om_1', ts: Date.now() });
+  await commands.handleCardAction({ chatId: 'oc_G', openId: undefined, value: '1' }, d);
+  assert.equal(d.injected.length, 0);
+  assert.equal(d.sent.length, 0);
+});
+
 test('handleCardAction: 正常路由 inject + delete pending + patchCard + 记日志', async () => {
   const d = deps();
   d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
@@ -207,7 +222,7 @@ test('handleCardAction: 未绑定群不 inject', async () => {
   assert.match(d.sent[0][1], /未绑定/);
 });
 
-test('handleCardAction: not-in-tmux 提示且 pending 已删(不回滚)', async () => {
+test('handleCardAction: not-in-tmux 提示且 pending 已删 + patch 红卡(#14)', async () => {
   const d = deps({ injectFails: true });
   d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
   d.pending.set('sid-1', { chatId: 'oc_G', messageId: 'om_1', ts: Date.now() });
@@ -215,6 +230,31 @@ test('handleCardAction: not-in-tmux 提示且 pending 已删(不回滚)', async 
   assert.equal(d.injected.length, 0);
   assert.match(d.sent[0][1], /不在 tmux/);
   assert.equal(d.pending.has('sid-1'), false);
+  assert.equal(d.patched.length, 1);  // #14 原卡 patch 红提示
+  assert.equal(d.patched[0][1].header.template, 'red');
+});
+
+test('#19 /open 对话名忽略大小写兜底', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'CC', '/p/one-cli', 'active') };
+  await commands.handleMessage({ text: '/open cc', chatId: 'oc_p2p', chatType: 'p2p', openId: 'ou_me' }, d);
+  assert.equal(d.reg['sid-1'].chat_id, 'oc_NEW');  // 大小写兜底匹配
+});
+
+test('#11 createGroup 返 null 不假绑定', async () => {
+  const d = deps({ createdChatId: null });
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active') };
+  await commands.handleMessage({ text: '/open 1', chatId: 'oc_p2p', chatType: 'p2p', openId: 'ou_me' }, d);
+  assert.equal(d.reg['sid-1'].chat_id, null);  // 不 bind
+  assert.match(d.sent[0][1], /建群失败/);
+});
+
+test('#23 /history 0 不被当 10（至少 1 条）', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G' }) };
+  d.logs['sid-1'] = [{ ts: 't', dir: 'in', kind: 'prompt', text: 'hi' }, { ts: 't2', dir: 'out', kind: 'result', text: 'bye' }];
+  await commands.handleMessage({ text: '/history 0', chatId: 'oc_G', chatType: 'group', openId: 'ou_me' }, d);
+  assert.match(d.sent[0][1], /bye/);  // n=1 显示最后 1 条，不当 10 全显
 });
 
 test('handleCardAction: 非白名单 openId 忽略', async () => {

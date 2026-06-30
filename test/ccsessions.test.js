@@ -40,3 +40,8 @@ test('alive: 当前进程存活，假 pid 不在', () => {
   assert.equal(cc.alive(99999999), false);
   assert.equal(cc.alive(null), false);
 });
+
+test('#9 aliveClaude: 不存在/假 pid 返回 false（不调 ps 误判）', () => {
+  assert.equal(cc.aliveClaude(99999999), false);
+  assert.equal(cc.aliveClaude(null), false);
+});

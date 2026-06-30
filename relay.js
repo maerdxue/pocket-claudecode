@@ -72,29 +72,38 @@ feishu.startReceive(wsClient, async (p) => {
 
 startHttpServer({ port: PORT, deps }).then(({ port }) => console.log(`🔌 push 端口 :${port}/push`));
 
+function stableReg(o) {  // #15 排除 last_seen 比较，避免每 5s 因 last_seen 变写盘
+  const c = {};
+  for (const [k, v] of Object.entries(o)) c[k] = { ...v, last_seen: undefined };
+  return JSON.stringify(c);
+}
 // 轮询：扫 CC sessions dir → merge → 退出/恢复通知
 async function poll() {
   const scanned = ccsessions.scan();
   const before = JSON.parse(JSON.stringify(reg));
   const merged = registry.merge(reg, scanned);
-  for (const k of Object.keys(reg)) delete reg[k];
-  Object.assign(reg, merged);
+  Object.assign(reg, merged);  // #16 先覆盖（bind 看到新数据），再删多余，比 delete 全部安全
+  for (const k of Object.keys(reg)) if (!(k in merged)) delete reg[k];
   for (const sid of Object.keys(reg)) {
     const beforeStatus = before[sid]?.status;
     const chatId = reg[sid].chat_id || before[sid]?.chat_id;
     if (!chatId) continue;
     if (reg[sid].status === 'inactive' && beforeStatus === 'active') {
-      if (!registry.findByChatId(reg, chatId) || registry.findByChatId(reg, chatId) === sid) {
+      const otherActive = Object.values(reg).some(e => e.chat_id === chatId && e.status === 'active');  // #10 chatId 还有别的 active 不发退出
+      if (!otherActive) {
         console.log(`⏹ 会话退出: ${reg[sid].name}`);
         deps.send(chatId, `会话已退出（可恢复）：在 CC 里 claude --resume ${reg[sid].name}，恢复后此群自动接回。`).catch(()=>{});
       }
     }
     if (reg[sid].status === 'active' && beforeStatus === 'inactive') {
-      console.log(`▶️ 会话恢复: ${reg[sid].name}`);
-      deps.send(chatId, `会话已恢复: ${reg[sid].name}，可继续对话。`).catch(()=>{});
+      const wasActive = Object.values(before).some(e => e.chat_id === chatId && e.status === 'active');  // #10 chatId 之前已有 active 不发恢复
+      if (!wasActive) {
+        console.log(`▶️ 会话恢复: ${reg[sid].name}`);
+        deps.send(chatId, `会话已恢复: ${reg[sid].name}，可继续对话。`).catch(()=>{});
+      }
     }
   }
-  if (JSON.stringify(reg) !== JSON.stringify(before)) persist();
+  if (stableReg(reg) !== stableReg(before)) persist();
 }
 setInterval(poll, POLL_SEC * 1000);
 poll();
