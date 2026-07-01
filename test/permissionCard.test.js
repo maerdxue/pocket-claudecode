@@ -97,7 +97,12 @@ test('#22 buildContentCard: 空 screen 纯文本不代码块裹', () => {
 
 test('parseOptions: 无菜单上下文(模型回复编号列表)不误认', () => {
   const screen = '1. 5选项卡是不是5个按钮全有\n2. 多菜单卡是不是当前题选项';
-  assert.equal(parseOptions(screen), null);  // 无 Choose/❯，编号列表不当选项
+  assert.equal(parseOptions(screen), null);  // 无 Choose 标题，编号列表不当选项
+});
+
+test('parseOptions: CC 回复编号列表+输入框❯ prompt 不误判', () => {
+  const screen = '已定：\n1. 宽松 schema 字段必填\n2. 模型质量摘要放末尾\n3. 外部检索失败降级\n\n问题 1：...\nA. 保存\nB. 不保存\n❯ ';
+  assert.equal(parseOptions(screen), null);  // 无 Choose 标题，❯ 是输入框 prompt 不是菜单 marker
 });
 
 test('extractInput: 字符串原样', () => {
@@ -143,7 +148,7 @@ test('parseOptions: CC 标准菜单 1. xxx 认全 5 个', () => {
 });
 
 test('parseOptions: 兼容 ❯/> 高亮 marker 前缀', () => {
-  const screen = '1. A\n❯ 2. B\n3. C';
+  const screen = 'Choose an option:\n1. A\n❯ 2. B\n3. C';
   const opts = parseOptions(screen);
   assert.equal(opts.length, 3);
   assert.equal(opts[1].value.choice, '2');
