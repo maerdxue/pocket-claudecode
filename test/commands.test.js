@@ -310,25 +310,23 @@ test('群里 /goal 等 CC slash 命令：注入 CC，不当 relay 命令拦', as
   assert.equal(d.sent.length, 0);  // 不回"未知命令"
 });
 
-test('cleanStatusScreen: 去掉 CC TUI 装饰行，留实质内容', () => {
+test('cleanStatusScreen: 只去长分隔线，保留状态栏/agent/窗口名等其他信息', () => {
   const raw = [
     'CC 回复第一行',
-    'CC 回复第二行',
     '',
-    'work-dashboard ⎇feat/data-ingest │ glm-5.2 max │ 691.2k/1000k 69% focus',
-    '⏵⏵ accept edits on · 1 shell · ← for agents',
+    'work-dashboard ⎇feat/data-ingest │ glm-5.2 max focus',
+    '⏵⏵ accept edits on',
     '⯑ main',
-    '◯ BrowserAgent  截图 progress modal 实测    33m 7s',
+    '◯ BrowserAgent  实测    33m 7s',
     '──────────────────────────',
     '数据调整&小功能-glm ──',
     '❯',
   ].join('\n');
   const out = commands.cleanStatusScreen(raw);
   assert.match(out, /CC 回复第一行/);
-  assert.match(out, /CC 回复第二行/);
-  assert.doesNotMatch(out, /⎇/);
-  assert.doesNotMatch(out, /⏵/);
-  assert.doesNotMatch(out, /BrowserAgent/);
-  assert.doesNotMatch(out, /❯/);
-  assert.doesNotMatch(out, /数据调整&小功能-glm/);
+  assert.match(out, /⎇/);                  // 状态栏留
+  assert.match(out, /BrowserAgent/);       // agent 留
+  assert.match(out, /数据调整&小功能-glm/); // 窗口名留
+  assert.match(out, /❯/);                  // 输入框留
+  assert.doesNotMatch(out, /──────/);      // 长分隔线去
 });
