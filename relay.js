@@ -58,6 +58,8 @@ const deps = {
   async patchCard(messageId, card) { try { await feishu.patchCard(client, messageId, card); } catch (e) { console.error('patchCard 失败:', e.message); } },
   pending: new Map(),
   setPending(sessionId, info) { this.pending.set(sessionId, info); },
+  pendingPrompts: new Map(),  // busy 时排队的群消息，poll 检测 busy→idle 自动注入
+  queuePrompt(sessionId, text) { const q = this.pendingPrompts.get(sessionId) || []; q.push(text); this.pendingPrompts.set(sessionId, q); },
 };
 
 function persist() { registry.save(REGISTRY_PATH, reg); }
@@ -100,6 +102,24 @@ async function poll() {
       if (!wasActive) {
         console.log(`▶️ 会话恢复: ${reg[sid].name}`);
         deps.send(chatId, `会话已恢复: ${reg[sid].name}，可继续对话。`).catch(()=>{});
+      }
+    }
+    // busy→idle：CC 忙完，自动注入排队的群消息
+    if (before[sid]?.ccStatus === 'busy' && reg[sid].ccStatus === 'idle' && reg[sid].status === 'active') {
+      const q = deps.pendingPrompts && deps.pendingPrompts.get(sid);
+      if (q && q.length) {
+        deps.pendingPrompts.delete(sid);
+        for (const msg of q) {
+          try {
+            await deps.inject(sid, msg);
+            deps.appendLog(sid, { dir: 'in', kind: 'queued', text: msg });
+            console.log(`⏩ 排队注入 ${sid.slice(0,8)}: ${JSON.stringify(msg)}`);
+          } catch (e) {
+            console.error('排队注入失败:', e.message);
+            if (e.message === 'not-in-tmux' && chatId) deps.send(chatId, '排队消息注入失败：会话不在 tmux。').catch(()=>{});
+          }
+        }
+        if (chatId) deps.send(chatId, `✅ CC 忙完，已自动发送排队的 ${q.length} 条消息。`).catch(()=>{});
       }
     }
   }

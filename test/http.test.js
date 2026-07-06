@@ -75,16 +75,14 @@ test('/push kind=permission：真权限发 内容卡片+确认卡片 两条', as
   assert.equal(d.logs.cc[0].kind, 'permission');
 });
 
-test('/push kind=permission：idle(waiting for input)发极简提示，不推整屏截屏', async () => {
+test('/push kind=permission：idle(waiting for input)不发（CC stop 已推结果，多发无用）', async () => {
   const d = deps();
   const { port, close } = await startHttpServer({ port: 0, deps: d });
   await post(port, { session:'cc', kind:'permission', message:'Claude is waiting for your input' });
   await close();
   assert.equal(d.sentCards.length, 0);
   assert.equal(d.pending.size, 0);
-  assert.match(d.sent[0][1], /已就绪/);
-  assert.match(d.sent[0][1], /waiting for your input/);
-  assert.doesNotMatch(d.sent[0][1], /SCREEN/);  // 不倒整屏
+  assert.equal(d.sent.length, 0);  // idle 不发任何消息
 });
 
 test('/push kind=permission：idle 含方案发 内容+确认(方案按钮) 两条', async () => {

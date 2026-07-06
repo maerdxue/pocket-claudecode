@@ -9,7 +9,7 @@ function deps(over = {}) {
     reg: {},
     sent: [], injected: [], captured: 'SCREEN', createdChatId: 'oc_NEW', logs: {},
     injectFails: false, captureReturns: 'SCREEN',
-    pending: new Map(), patched: [],
+    pending: new Map(), patched: [], queued: [], queuePrompt(sid, text) { this.queued.push([sid, text]); },
     async send(chatId, text) { this.sent.push([chatId, text]); },
     async inject(sessionId, text) { if (this.injectFails) throw new Error('not-in-tmux'); this.injected.push([sessionId, text]); },
     async patchCard(messageId, card) { this.patched.push([messageId, card]); },
@@ -286,12 +286,13 @@ test('MY_OPEN_ID 空 + /whoami：也回 open_id', async () => {
   assert.match(d.sent[0][1], /ou_newuser/);
 });
 
-test('群里 CC busy：不注入，回忙提示（避免 bake 时消息被丢）', async () => {
+test('群里 CC busy：排队不注入，回已排队提示', async () => {
   const d = deps();
   d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G', ccStatus: 'busy' }) };
   await commands.handleMessage({ text: '继续', chatId: 'oc_G', chatType: 'group', openId: 'ou_me' }, d);
   assert.equal(d.injected.length, 0);
-  assert.match(d.sent[0][1], /忙/);
+  assert.deepEqual(d.queued, [['sid-1', '继续']]);
+  assert.match(d.sent[0][1], /排队/);
 });
 
 test('群里 CC idle：正常注入（busy 检查不挡 idle）', async () => {
