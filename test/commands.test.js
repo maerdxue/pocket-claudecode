@@ -309,3 +309,26 @@ test('群里 /goal 等 CC slash 命令：注入 CC，不当 relay 命令拦', as
   assert.deepEqual(d.injected, [['sid-1', '/goal 做个功能']]);
   assert.equal(d.sent.length, 0);  // 不回"未知命令"
 });
+
+test('cleanStatusScreen: 去掉 CC TUI 装饰行，留实质内容', () => {
+  const raw = [
+    'CC 回复第一行',
+    'CC 回复第二行',
+    '',
+    'work-dashboard ⎇feat/data-ingest │ glm-5.2 max │ 691.2k/1000k 69% focus',
+    '⏵⏵ accept edits on · 1 shell · ← for agents',
+    '⯑ main',
+    '◯ BrowserAgent  截图 progress modal 实测    33m 7s',
+    '──────────────────────────',
+    '数据调整&小功能-glm ──',
+    '❯',
+  ].join('\n');
+  const out = commands.cleanStatusScreen(raw);
+  assert.match(out, /CC 回复第一行/);
+  assert.match(out, /CC 回复第二行/);
+  assert.doesNotMatch(out, /⎇/);
+  assert.doesNotMatch(out, /⏵/);
+  assert.doesNotMatch(out, /BrowserAgent/);
+  assert.doesNotMatch(out, /❯/);
+  assert.doesNotMatch(out, /数据调整&小功能-glm/);
+});
