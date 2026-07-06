@@ -285,3 +285,18 @@ test('MY_OPEN_ID 空 + /whoami：也回 open_id', async () => {
   await commands.handleMessage({ text: '/whoami', chatId: 'oc_p2p', chatType: 'p2p', openId: 'ou_newuser' }, d);
   assert.match(d.sent[0][1], /ou_newuser/);
 });
+
+test('群里 CC busy：不注入，回忙提示（避免 bake 时消息被丢）', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G', ccStatus: 'busy' }) };
+  await commands.handleMessage({ text: '继续', chatId: 'oc_G', chatType: 'group', openId: 'ou_me' }, d);
+  assert.equal(d.injected.length, 0);
+  assert.match(d.sent[0][1], /忙/);
+});
+
+test('群里 CC idle：正常注入（busy 检查不挡 idle）', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G', ccStatus: 'idle' }) };
+  await commands.handleMessage({ text: '继续', chatId: 'oc_G', chatType: 'group', openId: 'ou_me' }, d);
+  assert.deepEqual(d.injected, [['sid-1', '继续']]);
+});
