@@ -301,3 +301,11 @@ test('群里 CC idle：正常注入（busy 检查不挡 idle）', async () => {
   await commands.handleMessage({ text: '继续', chatId: 'oc_G', chatType: 'group', openId: 'ou_me' }, d);
   assert.deepEqual(d.injected, [['sid-1', '继续']]);
 });
+
+test('群里 /goal 等 CC slash 命令：注入 CC，不当 relay 命令拦', async () => {
+  const d = deps();
+  d.reg = { 'sid-1': sess('sid-1', 'cc', '/p/one-cli', 'active', { chat_id: 'oc_G', ccStatus: 'idle' }) };
+  await commands.handleMessage({ text: '/goal 做个功能', chatId: 'oc_G', chatType: 'group', openId: 'ou_me' }, d);
+  assert.deepEqual(d.injected, [['sid-1', '/goal 做个功能']]);
+  assert.equal(d.sent.length, 0);  // 不回"未知命令"
+});
